@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stock Gudang - Preview HP</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            min-height: 100svh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            background-color: #e9eff0;
+            background-image: radial-gradient(#c3cdce 0.7px, transparent 0.7px);
+            background-size: 18px 18px;
+            font-family: "Trebuchet MS", sans-serif;
+        }
+
+        .phone {
+            position: relative;
+            width: min(410px, calc(100vw - 28px), calc((100svh - 28px) * 0.48));
+            aspect-ratio: 0.48;
+            padding: 9px;
+            overflow: hidden;
+            border: 1px solid #586064;
+            border-radius: 52px;
+            background: #171a1c;
+            box-shadow: 0 28px 70px #26363840, 0 8px 20px #26363830;
+        }
+
+        .screen {
+            position: absolute;
+            inset: 9px;
+            overflow: hidden;
+            border-radius: 43px;
+            background: #fff;
+        }
+
+        iframe {
+            position: absolute;
+            top: 34px;
+            left: 0;
+            width: 166.667%;
+            height: calc(166.667% - 56.667px);
+            transform: scale(0.6);
+            transform-origin: top left;
+            border: 0;
+            background: #f1f5f9;
+        }
+
+        .status-bar {
+            position: absolute;
+            z-index: 2;
+            inset: 0 0 auto;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 25px;
+            background: #fff;
+            color: #172126;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .island {
+            position: absolute;
+            top: 7px;
+            left: 50%;
+            width: 78px;
+            height: 18px;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            background: #111416;
+        }
+
+        .indicators {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .signal {
+            display: flex;
+            align-items: end;
+            gap: 1px;
+            height: 11px;
+        }
+
+        .signal span {
+            width: 2px;
+            border-radius: 2px;
+            background: #172126;
+        }
+
+        .signal span:nth-child(1) { height: 4px; }
+        .signal span:nth-child(2) { height: 6px; }
+        .signal span:nth-child(3) { height: 8px; }
+        .signal span:nth-child(4) { height: 10px; }
+
+        .battery {
+            position: relative;
+            width: 17px;
+            height: 9px;
+            border: 1px solid #172126;
+            border-radius: 2px;
+        }
+
+        .battery::before {
+            position: absolute;
+            top: 2px;
+            right: -3px;
+            width: 2px;
+            height: 3px;
+            border-radius: 0 2px 2px 0;
+            background: #172126;
+            content: "";
+        }
+
+        .battery::after {
+            position: absolute;
+            inset: 2px 4px 2px 2px;
+            border-radius: 1px;
+            background: #239b72;
+            content: "";
+        }
+
+        .home-indicator {
+            position: absolute;
+            z-index: 2;
+            bottom: 13px;
+            left: 50%;
+            width: 94px;
+            height: 4px;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            background: #111416;
+            pointer-events: none;
+        }
+
+        @media (max-height: 520px) and (orientation: landscape) {
+            .phone {
+                width: min(calc((100svh - 20px) * 0.48), calc(100vw - 28px));
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="phone" aria-label="Preview Stock Gudang pada layar ponsel">
+        <div class="screen">
+            <div class="status-bar" aria-hidden="true">
+                <span>9:41</span>
+                <span class="island"></span>
+                <span class="indicators">
+                    <span class="signal"><span></span><span></span><span></span><span></span></span>
+                    <span>LTE</span>
+                    <span class="battery"></span>
+                </span>
+            </div>
+            <iframe src="/dashboard" title="Dashboard Stock Gudang pada layar ponsel"></iframe>
+            <span class="home-indicator" aria-hidden="true"></span>
+        </div>
+    </main>
+</body>
+</html>

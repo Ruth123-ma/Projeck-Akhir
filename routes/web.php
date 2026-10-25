@@ -26,16 +26,25 @@ Route::middleware('auth')->group(function () {
     Route::get('/input-material', [WarehouseController::class, 'inputMaterial'])->name('input-material');
     Route::post('/input-material', [WarehouseController::class, 'storeTransaction'])->name('input-material.store');
     Route::get('/output-material', [WarehouseController::class, 'outputMaterial'])->name('output-material');
+    Route::get('/output-material/export/pdf', [WarehouseController::class, 'exportOutputPdf'])->name('output-material.export.pdf');
+    Route::get('/output-material/export/excel', [WarehouseController::class, 'exportOutputExcel'])->name('output-material.export.excel');
     Route::post('/output-material', [WarehouseController::class, 'storeTransaction'])->name('output-material.store');
     Route::get('/daftar-stok', [WarehouseController::class, 'daftarStok'])->name('daftar-stok');
+    Route::get('/daftar-stok/export/pdf', [WarehouseController::class, 'exportStockPdf'])->name('daftar-stok.export.pdf');
+    Route::get('/daftar-stok/export/excel', [WarehouseController::class, 'exportStockExcel'])->name('daftar-stok.export.excel');
     Route::get('/material/create', [WarehouseController::class, 'createMaterial'])->name('material.create');
     Route::post('/material', [WarehouseController::class, 'storeMaterial'])->name('material.store');
     Route::get('/material/{material}/edit', [WarehouseController::class, 'editMaterial'])->name('material.edit');
     Route::put('/material/{material}', [WarehouseController::class, 'updateMaterial'])->name('material.update');
     Route::get('/laporan-material', [WarehouseController::class, 'laporanMaterial'])->name('laporan-material');
+    Route::get('/laporan-material/export/pdf', [WarehouseController::class, 'exportMaterialReportPdf'])->name('laporan-material.export.pdf');
+    Route::get('/laporan-material/export/excel', [WarehouseController::class, 'exportMaterialReportExcel'])->name('laporan-material.export.excel');
     Route::get('/laporan-stok', [WarehouseController::class, 'laporanStok'])->name('laporan-stok');
+    Route::get('/laporan-stok/export/pdf', [WarehouseController::class, 'exportStockReportPdf'])->name('laporan-stok.export.pdf');
+    Route::get('/laporan-stok/export/excel', [WarehouseController::class, 'exportStockReportExcel'])->name('laporan-stok.export.excel');
     Route::get('/laporan', [WarehouseController::class, 'laporan'])->name('laporan.index');
 
     Route::get('/material-masuk', [MaterialMasukController::class, 'index'])->name('material-masuk.index');
+    Route::get('/material-masuk/export/excel', [MaterialMasukController::class, 'exportExcel'])->name('material-masuk.export.excel');
     Route::post('/material-masuk', [MaterialMasukController::class, 'store'])->name('material-masuk.store');
 });

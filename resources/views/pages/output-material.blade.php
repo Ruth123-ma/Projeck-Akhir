@@ -124,80 +124,49 @@
                 </form>
             </div>
 
-            <section class="bg-white rounded-3xl border border-slate-200/80 shadow-md overflow-hidden">
-                <div class="p-6 border-b border-slate-100">
-                    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <h3 class="text-lg font-extrabold text-slate-800">Laporan Saldo Stok Gudang</h3>
-                            <p class="mt-1 text-xs text-slate-500">
-                                Saldo berdasarkan riwayat transaksi sampai akhir {{ \Carbon\Carbon::create($year, $month)->translatedFormat('F Y') }}
-                            </p>
-                        </div>
-                        <form method="GET" action="{{ route('output-material') }}" class="no-print flex flex-wrap items-end gap-2">
-                            <div>
-                                <label for="reportMonth" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Bulan</label>
-                                <select id="reportMonth" name="month" class="rounded-lg border-slate-300 text-sm">
-                                    @foreach(range(1, 12) as $monthOption)
-                                        <option value="{{ $monthOption }}" @selected($month === $monthOption)>
-                                            {{ \Carbon\Carbon::create()->month($monthOption)->translatedFormat('F') }}
+            <!-- Riwayat Transaksi Keluar -->
+            <div class="bg-white rounded-3xl border border-slate-200/80 shadow-md overflow-hidden">
+                <div class="p-6 pb-4 border-b border-slate-100 space-y-4">
+                    <div>
+                        <h3 class="text-lg font-extrabold text-slate-800">Riwayat Transaksi Material Keluar</h3>
+                        <p class="text-xs text-slate-400 mt-1">Riwayat tersimpan permanen di database website.</p>
+                    </div>
+                    <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                        <form method="GET" action="{{ route('output-material') }}" class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                            <label class="space-y-1">
+                                <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Cari Material</span>
+                                <input type="search" name="cari" value="{{ $search }}" placeholder="Kode atau nama material"
+                                    class="w-full sm:w-64 bg-white border border-slate-200 text-sm px-3 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500">
+                            </label>
+                            <label class="space-y-1">
+                                <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Filter Bulan</span>
+                                <select name="bulan" class="w-full sm:w-48 bg-white border border-slate-200 text-sm px-3 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500">
+                                    <option value="">Semua Bulan</option>
+                                    @foreach($availableMonths as $month)
+                                        <option value="{{ $month }}" @selected($selectedMonth === $month)>
+                                            {{ \Carbon\Carbon::createFromFormat('!Y-m', $month)->locale('id')->translatedFormat('F Y') }}
                                         </option>
                                     @endforeach
                                 </select>
-                            </div>
-                            <div>
-                                <label for="reportYear" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Tahun</label>
-                                <input id="reportYear" name="year" type="number" min="2000" max="{{ now()->year + 1 }}" value="{{ $year }}" class="w-24 rounded-lg border-slate-300 text-sm">
-                            </div>
-                            <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
-                                Tampilkan
+                            </label>
+                            <button type="submit" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl transition">
+                                <i class="fa-solid fa-magnifying-glass mr-1"></i> Cari
                             </button>
-                            <button type="button" onclick="window.print()" class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">
-                                Cetak
-                            </button>
+                            @if($search !== '' || $selectedMonth !== '')
+                                <a href="{{ route('output-material') }}" class="text-center text-slate-500 hover:text-slate-800 font-semibold px-2 py-2.5">Reset</a>
+                            @endif
                         </form>
+                        <div class="flex gap-2">
+                            <a href="{{ route('output-material.export.pdf', request()->only(['cari', 'bulan'])) }}" target="_blank" rel="noopener"
+                                class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-4 py-2.5 rounded-xl transition">
+                                <i class="fa-solid fa-file-pdf mr-1"></i> PDF
+                            </a>
+                            <a href="{{ route('output-material.export.excel', request()->only(['cari', 'bulan'])) }}"
+                                class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-4 py-2.5 rounded-xl transition">
+                                <i class="fa-solid fa-file-excel mr-1"></i> Excel
+                            </a>
+                        </div>
                     </div>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="border-b border-slate-200 bg-slate-50">
-                            <tr>
-                                <th class="px-5 py-3 text-center text-xs font-bold uppercase text-slate-600">No</th>
-                                <th class="px-5 py-3 text-left text-xs font-bold uppercase text-slate-600">Kode Material</th>
-                                <th class="px-5 py-3 text-left text-xs font-bold uppercase text-slate-600">Nama Material</th>
-                                <th class="px-5 py-3 text-right text-xs font-bold uppercase text-slate-600">Saldo per Akhir Bulan</th>
-                                <th class="px-5 py-3 text-center text-xs font-bold uppercase text-slate-600">Satuan</th>
-                                <th class="px-5 py-3 text-center text-xs font-bold uppercase text-slate-600">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($stockReport as $index => $item)
-                                <tr class="border-b border-slate-100 hover:bg-slate-50">
-                                    <td class="px-5 py-3 text-center text-slate-500">{{ $index + 1 }}</td>
-                                    <td class="px-5 py-3 font-mono font-bold text-slate-800">{{ $item->kode_barang }}</td>
-                                    <td class="px-5 py-3 font-semibold text-slate-700">{{ $item->nama_material }}</td>
-                                    <td class="px-5 py-3 text-right font-bold text-slate-800">{{ number_format($item->stok, 2) }}</td>
-                                    <td class="px-5 py-3 text-center text-slate-600">{{ $item->satuan }}</td>
-                                    <td class="px-5 py-3 text-center">
-                                        <span class="rounded-full px-3 py-1 text-xs font-bold {{ $item->status === 'NORMAL' ? 'bg-emerald-100 text-emerald-700' : ($item->status === 'RENDAH' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700') }}">
-                                            {{ $item->status }}
-                                        </span>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="6" class="px-6 py-8 text-center text-slate-500">Belum ada data material untuk laporan ini.</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Riwayat Transaksi Keluar -->
-            <div class="bg-white rounded-3xl border border-slate-200/80 shadow-md overflow-hidden">
-                <div class="p-6 pb-4 border-b border-slate-100">
-                    <h3 class="text-lg font-extrabold text-slate-800">Riwayat Transaksi Material Keluar</h3>
                 </div>
 
                 <div class="overflow-x-auto">
@@ -231,6 +200,11 @@
                         </tbody>
                     </table>
                 </div>
+                @if($transactions->hasPages())
+                    <div class="px-6 py-4 border-t border-slate-100">
+                        {{ $transactions->links() }}
+                    </div>
+                @endif
             </div>
         </div>
     </main>

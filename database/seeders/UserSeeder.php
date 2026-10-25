@@ -13,12 +13,22 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        User::firstOrCreate(
-            ['name' => 'admin'],
-            [
-                'email' => 'admin@stockgudang.test',
-                'password' => Hash::make('123'),
-            ]
-        );
+        $user = User::query()
+            ->whereRaw('LOWER(name) = ?', ['admin'])
+            ->first();
+
+        if ($user) {
+            if ($user->name !== 'Admin') {
+                $user->update(['name' => 'Admin']);
+            }
+
+            return;
+        }
+
+        User::create([
+            'name' => 'Admin',
+            'email' => 'admin@stockgudang.test',
+            'password' => Hash::make('123'),
+        ]);
     }
 }

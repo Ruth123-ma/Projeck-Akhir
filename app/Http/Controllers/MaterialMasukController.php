@@ -6,23 +6,93 @@ use App\Models\Material;
 use App\Models\MaterialMasuk;
 use App\Models\MaterialTransaction;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class MaterialMasukController
 {
-    public function index(Request $request) {
+    public function index(Request $request)
+    {
+        $request->validate([
+            'bulan' => 'nullable|string|max:20',
+            'cari' => 'nullable|string|max:100',
+        ]);
+
+        return response()->json($this->filteredHistory($request)->get());
+    }
+
+    public function exportExcel(Request $request)
+    {
+        $request->validate([
+            'bulan' => 'nullable|string|max:20',
+            'cari' => 'nullable|string|max:100',
+        ]);
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Riwayat Material Masuk');
+        $headers = ['Nomor Material', 'Nama Material', 'Jumlah', 'Satuan', 'Tanggal', 'Jam', 'Bulan'];
+
+        foreach ($headers as $index => $header) {
+            $column = chr(ord('A') + $index);
+            $sheet->setCellValueExplicit($column.'1', $header, DataType::TYPE_STRING);
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $sheet->getStyle('A1:G1')->getFont()->setBold(true);
+
+        foreach ($this->filteredHistory($request)->get() as $index => $item) {
+            $row = $index + 2;
+            $values = [
+                'A' => $item->kode_barang,
+                'B' => $item->nama_material,
+                'D' => $item->satuan,
+                'E' => $item->tanggal_transaksi,
+                'F' => $item->jam_input,
+                'G' => $item->bulan_simpanan,
+            ];
+
+            foreach ($values as $column => $value) {
+                $sheet->setCellValueExplicit($column.$row, (string) $value, DataType::TYPE_STRING);
+            }
+
+            $sheet->setCellValueExplicit('C'.$row, (float) $item->jumlah, DataType::TYPE_NUMERIC);
+        }
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            (new Xlsx($spreadsheet))->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, 'riwayat-material-masuk-'.now()->format('Ymd-His').'.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    private function filteredHistory(Request $request): Builder
+    {
+        $query = MaterialMasuk::query()->orderByDesc('id');
         $bulan = $request->query('bulan');
-        $query = MaterialMasuk::orderBy('id', 'desc');
-        
+
         if ($bulan && $bulan !== 'Semua') {
             $query->where('bulan_simpanan', $bulan);
         }
-        
-        return response()->json($query->get());
+
+        $search = trim((string) $request->query('cari', ''));
+        if ($search !== '') {
+            $query->where(function (Builder $query) use ($search): void {
+                $query->where('kode_barang', 'like', '%'.$search.'%')
+                    ->orWhere('nama_material', 'like', '%'.$search.'%');
+            });
+        }
+
+        return $query;
     }
 
-    public function store(Request $request) {
+    public function store(Request $request)
+    {
         $validated = $request->validate([
             'kode' => 'sometimes|required|string',
             'material_id' => 'sometimes|nullable|exists:materials,id',
@@ -49,7 +119,7 @@ class MaterialMasukController
 
         try {
             $history = DB::transaction(function () use ($validated, $kode, $nama, $satuan, $tanggal, $jam, $bulan, $type, $quantity, $notes) {
-                $material = !empty($validated['material_id'])
+                $material = ! empty($validated['material_id'])
                     ? Material::lockForUpdate()->findOrFail($validated['material_id'])
                     : Material::firstOrCreate(
                         ['kode_barang' => $kode],
@@ -66,7 +136,7 @@ class MaterialMasukController
                         ]
                     );
 
-                if (!$material || empty($kode) && empty($validated['material_id'])) {
+                if (! $material || empty($kode) && empty($validated['material_id'])) {
                     abort(422, 'Material tidak ditemukan atau kode barang wajib diisi.');
                 }
 
@@ -119,5 +189,4 @@ class MaterialMasukController
 
         return response()->json(['success' => true, 'data' => $history['history'], 'stock' => $history['stock']]);
     }
-
 }

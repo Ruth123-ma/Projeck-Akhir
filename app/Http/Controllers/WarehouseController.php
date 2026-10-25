@@ -6,7 +6,9 @@ use App\Models\Attendance;
 use App\Models\Member;
 use App\Models\Material;
 use App\Models\MaterialTransaction;
+use Carbon\Carbon;
 use Exception;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +16,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class WarehouseController
 {
@@ -91,46 +96,224 @@ class WarehouseController
 
     public function outputMaterial(Request $request): View
     {
-        $year = (int) $request->query('year', 2026);
-        $month = (int) $request->query('month', 9);
-
-        abort_if($month < 1 || $month > 12 || $year < 2000 || $year > now()->year + 1, 422);
+        $validated = $request->validate([
+            'cari' => 'nullable|string|max:100',
+            'bulan' => 'nullable|date_format:Y-m',
+        ]);
 
         $materials = Material::orderBy('nama_material', 'asc')->get();
-        $transactions = MaterialTransaction::with('material')->where('type', 'OUT')->latest()->take(10)->get();
-        $reportEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
-        $stockByMaterial = MaterialTransaction::query()
-            ->where('created_at', '<=', $reportEnd)
-            ->select('material_id')
-            ->selectRaw("SUM(CASE WHEN type = 'IN' THEN quantity ELSE -quantity END) AS stock_balance")
-            ->groupBy('material_id')
-            ->pluck('stock_balance', 'material_id');
-        $stockReport = $materials->map(function (Material $material) use ($stockByMaterial): object {
-            $stock = (float) $stockByMaterial->get($material->id, 0);
+        $transactions = $this->outputHistoryQuery($validated)
+            ->paginate(20)
+            ->withQueryString();
+        $availableMonths = MaterialTransaction::query()
+            ->where('type', 'OUT')
+            ->whereNotNull('created_at')
+            ->select('created_at')
+            ->distinct()
+            ->orderByDesc('created_at')
+            ->pluck('created_at')
+            ->map(fn ($date) => Carbon::parse($date)->format('Y-m'))
+            ->unique()
+            ->values();
 
-            return (object) [
-                'kode_barang' => $material->kode_barang,
-                'nama_material' => $material->nama_material,
-                'satuan' => $material->satuan,
-                'stok' => $stock,
-                'status' => Material::statusForStock($stock, (float) ($material->min_stok ?? 10)),
-            ];
-        });
-        $totalStokLaporan = (float) $stockReport->sum('stok');
-
-        return view('pages.output-material', compact(
-            'materials', 'transactions', 'stockReport', 'totalStokLaporan', 'year', 'month'
-        ));
+        return view('pages.output-material', [
+            'materials' => $materials,
+            'transactions' => $transactions,
+            'availableMonths' => $availableMonths,
+            'search' => $validated['cari'] ?? '',
+            'selectedMonth' => $validated['bulan'] ?? '',
+        ]);
     }
 
-    public function daftarStok(): View
+    public function exportOutputExcel(Request $request)
     {
-        $materials = Material::orderBy('nama_material', 'asc')->paginate(20);
+        $validated = $request->validate([
+            'cari' => 'nullable|string|max:100',
+            'bulan' => 'nullable|date_format:Y-m',
+        ]);
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Material Keluar');
+        $headers = ['Tanggal', 'Kode Material', 'Nama Material', 'Jumlah Keluar', 'Satuan', 'Keterangan'];
+
+        foreach ($headers as $index => $header) {
+            $column = chr(ord('A') + $index);
+            $sheet->setCellValueExplicit($column.'1', $header, DataType::TYPE_STRING);
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $sheet->getStyle('A1:F1')->getFont()->setBold(true);
+
+        foreach ($this->outputHistoryQuery($validated)->get() as $index => $transaction) {
+            $row = $index + 2;
+            $values = [
+                'A' => $transaction->created_at?->format('d/m/Y H:i') ?? '',
+                'B' => $transaction->material?->kode_barang ?? '-',
+                'C' => $transaction->material?->nama_material ?? '-',
+                'E' => $transaction->material?->satuan ?? '',
+                'F' => $transaction->notes ?? '-',
+            ];
+
+            foreach ($values as $column => $value) {
+                $sheet->setCellValueExplicit($column.$row, (string) $value, DataType::TYPE_STRING);
+            }
+
+            $sheet->setCellValueExplicit('D'.$row, (float) $transaction->quantity, DataType::TYPE_NUMERIC);
+        }
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            (new Xlsx($spreadsheet))->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, 'riwayat-material-keluar-'.now()->format('Ymd-His').'.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    public function exportOutputPdf(Request $request): View
+    {
+        $validated = $request->validate([
+            'cari' => 'nullable|string|max:100',
+            'bulan' => 'nullable|date_format:Y-m',
+        ]);
+        $transactions = $this->outputHistoryQuery($validated)->get();
+
+        return view('pages.output-material-pdf', compact('transactions'));
+    }
+
+    private function outputHistoryQuery(array $filters): Builder
+    {
+        $query = MaterialTransaction::query()
+            ->with('material')
+            ->where('type', 'OUT')
+            ->latest();
+
+        if (! empty($filters['bulan'])) {
+            [$year, $month] = explode('-', $filters['bulan']);
+            $query->whereYear('created_at', (int) $year)
+                ->whereMonth('created_at', (int) $month);
+        }
+
+        $search = trim($filters['cari'] ?? '');
+        if ($search !== '') {
+            $query->whereHas('material', function (Builder $materialQuery) use ($search): void {
+                $materialQuery->where('kode_barang', 'like', '%'.$search.'%')
+                    ->orWhere('nama_material', 'like', '%'.$search.'%');
+            });
+        }
+
+        return $query;
+    }
+
+    public function daftarStok(Request $request): View
+    {
+        $validated = $request->validate([
+            'cari' => 'nullable|string|max:100',
+            'bulan' => 'nullable|date_format:Y-m',
+        ]);
+
+        $materials = $this->stockListQuery($validated)->paginate(20)->withQueryString();
         $totalMaterial = Material::count();
         $stokKritis = Material::whereIn('status', ['KRITIS', 'RENDAH'])->count();
         $totalStok = Material::sum('stok_akhir');
+        $availableMonths = Material::query()
+            ->whereNotNull('tanggal_transaksi')
+            ->select('tanggal_transaksi')
+            ->distinct()
+            ->orderByDesc('tanggal_transaksi')
+            ->pluck('tanggal_transaksi')
+            ->map(fn ($date) => Carbon::parse($date)->format('Y-m'))
+            ->unique()
+            ->values();
 
-        return view('pages.daftar-stok', compact('materials', 'totalMaterial', 'stokKritis', 'totalStok'));
+        return view('pages.daftar-stok', [
+            'materials' => $materials,
+            'totalMaterial' => $totalMaterial,
+            'stokKritis' => $stokKritis,
+            'totalStok' => $totalStok,
+            'availableMonths' => $availableMonths,
+            'search' => $validated['cari'] ?? '',
+            'selectedMonth' => $validated['bulan'] ?? '',
+        ]);
+    }
+
+    public function exportStockExcel(Request $request)
+    {
+        $validated = $request->validate([
+            'cari' => 'nullable|string|max:100',
+            'bulan' => 'nullable|date_format:Y-m',
+        ]);
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Daftar Stok');
+        $headers = ['Kode Barang', 'Nama Material', 'Lokasi', 'Stok Akhir', 'Min Stok', 'Satuan', 'Status', 'Tanggal'];
+
+        foreach ($headers as $index => $header) {
+            $column = chr(ord('A') + $index);
+            $sheet->setCellValueExplicit($column.'1', $header, DataType::TYPE_STRING);
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+
+        foreach ($this->stockListQuery($validated)->get() as $index => $material) {
+            $row = $index + 2;
+            $values = [
+                'A' => $material->kode_barang,
+                'B' => $material->nama_material,
+                'C' => $material->lokasi ?? 'Gudang Utama',
+                'F' => $material->satuan,
+                'G' => $material->status ?? 'NORMAL',
+                'H' => $material->tanggal_transaksi?->format('d/m/Y') ?? '',
+            ];
+
+            foreach ($values as $column => $value) {
+                $sheet->setCellValueExplicit($column.$row, (string) $value, DataType::TYPE_STRING);
+            }
+
+            $sheet->setCellValueExplicit('D'.$row, (float) $material->stok_akhir, DataType::TYPE_NUMERIC);
+            $sheet->setCellValueExplicit('E'.$row, (float) ($material->min_stok ?? 10), DataType::TYPE_NUMERIC);
+        }
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            (new Xlsx($spreadsheet))->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, 'daftar-stok-gudang-'.now()->format('Ymd-His').'.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    public function exportStockPdf(Request $request): View
+    {
+        $validated = $request->validate([
+            'cari' => 'nullable|string|max:100',
+            'bulan' => 'nullable|date_format:Y-m',
+        ]);
+        $materials = $this->stockListQuery($validated)->get();
+
+        return view('pages.daftar-stok-pdf', compact('materials'));
+    }
+
+    private function stockListQuery(array $filters): Builder
+    {
+        $query = Material::query()->orderBy('nama_material');
+
+        if (! empty($filters['bulan'])) {
+            [$year, $month] = explode('-', $filters['bulan']);
+            $query->whereYear('tanggal_transaksi', (int) $year)
+                ->whereMonth('tanggal_transaksi', (int) $month);
+        }
+
+        $search = trim($filters['cari'] ?? '');
+        if ($search !== '') {
+            $query->where(function (Builder $query) use ($search): void {
+                $query->where('kode_barang', 'like', '%'.$search.'%')
+                    ->orWhere('nama_material', 'like', '%'.$search.'%');
+            });
+        }
+
+        return $query;
     }
 
     public function createMaterial(): View
@@ -228,24 +411,31 @@ class WarehouseController
 
     public function laporanMaterial(Request $request): View
     {
+        $validated = $request->validate([
+            'year' => 'nullable|integer|min:2000|max:'.(now()->year + 1),
+            'month' => 'nullable|integer|min:1|max:12',
+            'cari' => 'nullable|string|max:100',
+        ]);
         $year = (int) $request->query('year', now()->year);
         $month = (int) $request->query('month', now()->month);
+        $search = trim($validated['cari'] ?? '');
 
         abort_if($month < 1 || $month > 12 || $year < 2000 || $year > now()->year + 1, 422);
 
         $periodStart = \Carbon\Carbon::create($year, $month, 1)->startOfDay();
         $periodEnd = $periodStart->copy()->endOfMonth()->endOfDay();
-        $periodTransactions = MaterialTransaction::query()
-            ->whereBetween('created_at', [$periodStart, $periodEnd])
-            ->where('type', 'OUT');
+        $periodTransactions = $this->reportTransactionsQuery($periodStart, $periodEnd, $search);
+        $outgoingTransactions = (clone $periodTransactions)->where('type', 'OUT');
+        $incomingTransactions = (clone $periodTransactions)->where('type', 'IN');
 
-        $transactions = (clone $periodTransactions)
-            ->with('material')
+        $transactions = (clone $outgoingTransactions)
             ->latest()
             ->get();
-        $totalTransaksi = (clone $periodTransactions)->count();
-        $totalJumlahKeluar = (float) (clone $periodTransactions)->sum('quantity');
-        $outgoingSummary = (clone $periodTransactions)
+        $incoming = (clone $incomingTransactions)->latest()->get();
+        $totalTransaksi = (clone $outgoingTransactions)->count();
+        $totalTransaksiMasuk = (clone $incomingTransactions)->count();
+        $jumlahBarangMasuk = (clone $incomingTransactions)->distinct()->count('material_id');
+        $outgoingSummary = (clone $outgoingTransactions)
             ->select('material_id')
             ->selectRaw('SUM(quantity) AS total_keluar')
             ->groupBy('material_id')
@@ -267,18 +457,174 @@ class WarehouseController
         $jumlahBarangKeluar = $summaryMaterials->count();
 
         return view('pages.laporan-material', compact(
-            'transactions', 'totalTransaksi', 'totalJumlahKeluar', 'jumlahBarangKeluar',
-            'summaryMaterials', 'month', 'year'
+            'transactions', 'totalTransaksi', 'jumlahBarangKeluar',
+            'summaryMaterials', 'incoming', 'totalTransaksiMasuk', 'jumlahBarangMasuk',
+            'month', 'year', 'search'
         ));
+    }
+
+    public function exportMaterialReportExcel(Request $request)
+    {
+        [$periodStart, $periodEnd, $year, $month, $search] = $this->materialReportFilters($request);
+        $transactions = $this->reportTransactionsQuery($periodStart, $periodEnd, $search)
+            ->with('material')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Laporan Masuk Keluar');
+        $headers = ['Jenis Transaksi', 'Tanggal', 'Kode Material', 'Nama Material', 'Jumlah', 'Satuan', 'User', 'Keterangan'];
+
+        foreach ($headers as $index => $header) {
+            $column = chr(ord('A') + $index);
+            $sheet->setCellValueExplicit($column.'1', $header, DataType::TYPE_STRING);
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+
+        foreach ($transactions as $index => $transaction) {
+            $row = $index + 2;
+            $values = [
+                'A' => $transaction->type === 'IN' ? 'Masuk' : 'Keluar',
+                'B' => $transaction->created_at?->format('d/m/Y H:i') ?? '',
+                'C' => $transaction->material?->kode_barang ?? '-',
+                'D' => $transaction->material?->nama_material ?? '-',
+                'F' => $transaction->material?->satuan ?? '',
+                'G' => $transaction->user_id ?? 'System',
+                'H' => $transaction->notes ?? '-',
+            ];
+
+            foreach ($values as $column => $value) {
+                $sheet->setCellValueExplicit($column.$row, (string) $value, DataType::TYPE_STRING);
+            }
+
+            $sheet->setCellValueExplicit('E'.$row, (float) $transaction->quantity, DataType::TYPE_NUMERIC);
+        }
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            (new Xlsx($spreadsheet))->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, sprintf('laporan-material-%04d-%02d-%s.xlsx', $year, $month, now()->format('His')), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    public function exportMaterialReportPdf(Request $request): View
+    {
+        [$periodStart, $periodEnd, $year, $month, $search] = $this->materialReportFilters($request);
+        $transactions = $this->reportTransactionsQuery($periodStart, $periodEnd, $search)
+            ->with('material')
+            ->orderByDesc('created_at')
+            ->get();
+
+        return view('pages.laporan-material-pdf', compact('transactions', 'year', 'month', 'search'));
+    }
+
+    private function materialReportFilters(Request $request): array
+    {
+        $validated = $request->validate([
+            'year' => 'nullable|integer|min:2000|max:'.(now()->year + 1),
+            'month' => 'nullable|integer|min:1|max:12',
+            'cari' => 'nullable|string|max:100',
+        ]);
+
+        $year = (int) $request->query('year', now()->year);
+        $month = (int) $request->query('month', now()->month);
+        abort_if($month < 1 || $month > 12 || $year < 2000 || $year > now()->year + 1, 422);
+
+        $periodStart = Carbon::create($year, $month, 1)->startOfDay();
+        $periodEnd = $periodStart->copy()->endOfMonth()->endOfDay();
+
+        return [$periodStart, $periodEnd, $year, $month, trim($validated['cari'] ?? '')];
+    }
+
+    private function reportTransactionsQuery(Carbon $periodStart, Carbon $periodEnd, string $search): Builder
+    {
+        $query = MaterialTransaction::query()
+            ->with('material')
+            ->whereBetween('created_at', [$periodStart, $periodEnd]);
+
+        if ($search !== '') {
+            $query->whereHas('material', function (Builder $materialQuery) use ($search): void {
+                $materialQuery->where('kode_barang', 'like', '%'.$search.'%')
+                    ->orWhere('nama_material', 'like', '%'.$search.'%');
+            });
+        }
+
+        return $query;
     }
 
     public function laporanStok(Request $request): View
     {
+        $filters = $this->stockReportFilters($request);
+        [$year, $month, $search] = $filters;
+        $stockReport = $this->stockReportData($year, $month, $search);
+        $totalStok = (float) $stockReport->sum('stok');
+
+        return view('pages.laporan-stok', compact('stockReport', 'totalStok', 'month', 'year', 'search'));
+    }
+
+    public function exportStockReportExcel(Request $request)
+    {
+        [$year, $month, $search] = $this->stockReportFilters($request);
+        $stockReport = $this->stockReportData($year, $month, $search);
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Laporan Stok');
+        $headers = ['Kode Material', 'Nama Material', 'Saldo Akhir', 'Satuan', 'Status'];
+
+        foreach ($headers as $index => $header) {
+            $column = chr(ord('A') + $index);
+            $sheet->setCellValueExplicit($column.'1', $header, DataType::TYPE_STRING);
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $sheet->getStyle('A1:E1')->getFont()->setBold(true);
+
+        foreach ($stockReport as $index => $material) {
+            $row = $index + 2;
+            foreach (['A' => $material->kode_barang, 'B' => $material->nama_material, 'D' => $material->satuan, 'E' => $material->status] as $column => $value) {
+                $sheet->setCellValueExplicit($column.$row, (string) $value, DataType::TYPE_STRING);
+            }
+            $sheet->setCellValueExplicit('C'.$row, (float) $material->stok, DataType::TYPE_NUMERIC);
+        }
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            (new Xlsx($spreadsheet))->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, sprintf('laporan-stok-%04d-%02d-%s.xlsx', $year, $month, now()->format('His')), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    public function exportStockReportPdf(Request $request): View
+    {
+        [$year, $month, $search] = $this->stockReportFilters($request);
+        $stockReport = $this->stockReportData($year, $month, $search);
+        $totalStok = (float) $stockReport->sum('stok');
+
+        return view('pages.laporan-stok-pdf', compact('stockReport', 'totalStok', 'month', 'year', 'search'));
+    }
+
+    private function stockReportFilters(Request $request): array
+    {
+        $validated = $request->validate([
+            'year' => 'nullable|integer|min:2000|max:'.(now()->year + 1),
+            'month' => 'nullable|integer|min:1|max:12',
+            'cari' => 'nullable|string|max:100',
+        ]);
         $year = (int) $request->query('year', 2026);
         $month = (int) $request->query('month', 9);
-
         abort_if($month < 1 || $month > 12 || $year < 2000 || $year > now()->year + 1, 422);
 
+        return [$year, $month, trim($validated['cari'] ?? '')];
+    }
+
+    private function stockReportData(int $year, int $month, string $search)
+    {
         $periodEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
         $stockByMaterial = MaterialTransaction::query()
             ->where('created_at', '<=', $periodEnd)
@@ -287,8 +633,15 @@ class WarehouseController
             ->groupBy('material_id')
             ->pluck('stock_balance', 'material_id');
 
-        $materials = Material::orderBy('nama_material')->get();
-        $stockReport = $materials->map(function (Material $material) use ($stockByMaterial): object {
+        $materials = Material::query()
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $query->where('kode_barang', 'like', '%'.$search.'%')
+                    ->orWhere('nama_material', 'like', '%'.$search.'%');
+            })
+            ->orderBy('nama_material')
+            ->get();
+
+        return $materials->map(function (Material $material) use ($stockByMaterial): object {
             $stock = (float) $stockByMaterial->get($material->id, 0);
 
             return (object) [
@@ -299,9 +652,6 @@ class WarehouseController
                 'status' => Material::statusForStock($stock, (float) ($material->min_stok ?? 10)),
             ];
         });
-        $totalStok = (float) $stockReport->sum('stok');
-
-        return view('pages.laporan-stok', compact('stockReport', 'totalStok', 'month', 'year'));
     }
 
     // Show form to create monthly attendance batch

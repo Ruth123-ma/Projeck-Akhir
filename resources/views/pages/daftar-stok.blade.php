@@ -19,14 +19,6 @@
                         <h2 class="text-2xl font-bold text-slate-800">Daftar Stok Gudang</h2>
                         <p class="text-xs text-slate-400 mt-1">Tampilan lengkap semua material yang tersimpan di gudang</p>
                     </div>
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <input type="text" id="searchInput" placeholder="Cari material..." 
-                            class="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 md:w-auto">
-                        <a href="{{ route('material.create') }}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700">
-                            <i class="fa-solid fa-plus"></i>
-                            Tambah Material
-                        </a>
-                    </div>
                 </div>
             </header>
 
@@ -80,8 +72,44 @@
 
                     <!-- Tabel Daftar Stok -->
                     <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-                        <div class="p-6 pb-4 border-b border-slate-100">
+                        <div class="p-6 pb-4 border-b border-slate-100 space-y-4">
                             <h3 class="text-lg font-extrabold text-slate-800">Daftar Lengkap Material Gudang</h3>
+                            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                                <form method="GET" action="{{ route('daftar-stok') }}" class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                                    <label class="space-y-1">
+                                        <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Cari Material</span>
+                                        <input type="search" name="cari" value="{{ $search }}" placeholder="Kode atau nama material"
+                                            class="w-full sm:w-64 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    </label>
+                                    <label class="space-y-1">
+                                        <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Filter Bulan</span>
+                                        <select name="bulan" class="w-full sm:w-48 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value="">Semua Bulan</option>
+                                            @foreach($availableMonths as $month)
+                                                <option value="{{ $month }}" @selected($selectedMonth === $month)>
+                                                    {{ \Carbon\Carbon::createFromFormat('!Y-m', $month)->locale('id')->translatedFormat('F Y') }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+                                    <button type="submit" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg transition">
+                                        <i class="fa-solid fa-magnifying-glass mr-1"></i> Cari
+                                    </button>
+                                    @if($search !== '' || $selectedMonth !== '')
+                                        <a href="{{ route('daftar-stok') }}" class="text-center text-slate-500 hover:text-slate-800 font-semibold px-2 py-2.5">Reset</a>
+                                    @endif
+                                </form>
+                                <div class="flex gap-2">
+                                    <a href="{{ route('daftar-stok.export.pdf', request()->only(['cari', 'bulan'])) }}" target="_blank" rel="noopener"
+                                        class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-4 py-2.5 rounded-lg transition">
+                                        <i class="fa-solid fa-file-pdf mr-1"></i> PDF
+                                    </a>
+                                    <a href="{{ route('daftar-stok.export.excel', request()->only(['cari', 'bulan'])) }}"
+                                        class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-4 py-2.5 rounded-lg transition">
+                                        <i class="fa-solid fa-file-excel mr-1"></i> Excel
+                                    </a>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="overflow-x-auto">
@@ -100,7 +128,7 @@
                                 </thead>
                                 <tbody>
                                     @forelse($materials as $idx => $material)
-                                        <tr class="border-b border-slate-100 hover:bg-slate-50 transition searchable" data-search="{{ strtolower($material->kode_barang . ' ' . $material->nama_material) }}">
+                                        <tr class="border-b border-slate-100 hover:bg-slate-50 transition">
                                             <td class="px-6 py-4 font-bold text-slate-800">{{ ($materials->currentPage() - 1) * $materials->perPage() + $loop->iteration }}</td>
                                             <td class="px-6 py-4 font-mono font-bold text-slate-700">{{ $material->kode_barang }}</td>
                                             <td class="px-6 py-4 font-semibold text-slate-800">{{ $material->nama_material }}</td>
@@ -159,22 +187,6 @@
             </div>
         </main>
     </div>
-
-    <script>
-        document.getElementById('searchInput').addEventListener('keyup', function(e) {
-            const searchTerm = e.target.value.toLowerCase();
-            const rows = document.querySelectorAll('.searchable');
-            
-            rows.forEach(row => {
-                const searchText = row.dataset.search;
-                if (searchText.includes(searchTerm)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-        });
-    </script>
 
 </body>
 </html>

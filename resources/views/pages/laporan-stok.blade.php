@@ -22,7 +22,7 @@
                 <div class="no-print flex flex-wrap items-end gap-2">
                     <form method="GET" action="{{ route('laporan-stok') }}" class="flex flex-wrap items-end gap-2">
                         <div>
-                            <label for="month" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Bulan</label>
+                            <label for="month" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Filter Bulan</label>
                             <select id="month" name="month" class="rounded-lg border-slate-300 text-sm">
                                 @foreach(range(1, 12) as $monthOption)
                                     <option value="{{ $monthOption }}" @selected($month === $monthOption)>
@@ -35,13 +35,23 @@
                             <label for="year" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Tahun</label>
                             <input id="year" name="year" type="number" min="2000" max="{{ now()->year + 1 }}" value="{{ $year }}" class="w-24 rounded-lg border-slate-300 text-sm">
                         </div>
+                        <div>
+                            <label for="cari" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Cari Material</label>
+                            <input id="cari" name="cari" type="search" value="{{ $search }}" placeholder="Kode atau nama"
+                                class="w-44 rounded-lg border-slate-300 text-sm">
+                        </div>
                         <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
                             <i class="fa-solid fa-filter mr-1"></i> Tampilkan
                         </button>
                     </form>
-                    <button type="button" onclick="window.print()" class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">
-                        <i class="fa-solid fa-print mr-1"></i> Cetak
-                    </button>
+                    <a href="{{ route('laporan-stok.export.pdf', request()->only(['year', 'month', 'cari'])) }}" target="_blank" rel="noopener"
+                        class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-100">
+                        <i class="fa-solid fa-file-pdf mr-1"></i> PDF
+                    </a>
+                    <a href="{{ route('laporan-stok.export.excel', request()->only(['year', 'month', 'cari'])) }}"
+                        class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100">
+                        <i class="fa-solid fa-file-excel mr-1"></i> Excel
+                    </a>
                 </div>
             </header>
 

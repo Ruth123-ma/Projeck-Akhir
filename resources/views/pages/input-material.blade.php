@@ -223,24 +223,42 @@
                         <p class="text-xs text-slate-400">Daftar transaksi material masuk yang tersimpan di database</p>
                     </div>
                     
-                    <div class="flex items-center space-x-2">
-                        <label class="text-xs font-bold text-slate-500 uppercase">Filter Bulan:</label>
-                        <select id="filterBulan" onchange="renderTable()" 
-                            class="px-3 py-2 rounded-xl border border-slate-200 font-semibold text-sm focus:ring-2 focus:ring-blue-500 bg-slate-50">
-                            <option value="Semua">Semua Bulan</option>
-                            <option value="Januari">Januari</option>
-                            <option value="Februari">Februari</option>
-                            <option value="Maret">Maret</option>
-                            <option value="April">April</option>
-                            <option value="Mei">Mei</option>
-                            <option value="Juni">Juni</option>
-                            <option value="Juli">Juli</option>
-                            <option value="Agustus">Agustus</option>
-                            <option value="September">September</option>
-                            <option value="Oktober">Oktober</option>
-                            <option value="November">November</option>
-                            <option value="Desember">Desember</option>
-                        </select>
+                    <div class="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center">
+                        <label class="relative w-full md:w-64">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input id="cariMaterial" type="search" oninput="renderTable()" placeholder="Cari material..."
+                                aria-label="Cari material berdasarkan kode atau nama"
+                                class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 font-medium text-sm focus:ring-2 focus:ring-blue-500 bg-slate-50">
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <label for="filterBulan" class="text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Filter Bulan:</label>
+                            <select id="filterBulan" onchange="renderTable()"
+                                class="px-3 py-2 rounded-xl border border-slate-200 font-semibold text-sm focus:ring-2 focus:ring-blue-500 bg-slate-50">
+                                <option value="Semua">Semua Bulan</option>
+                                <option value="Januari">Januari</option>
+                                <option value="Februari">Februari</option>
+                                <option value="Maret">Maret</option>
+                                <option value="April">April</option>
+                                <option value="Mei">Mei</option>
+                                <option value="Juni">Juni</option>
+                                <option value="Juli">Juli</option>
+                                <option value="Agustus">Agustus</option>
+                                <option value="September">September</option>
+                                <option value="Oktober">Oktober</option>
+                                <option value="November">November</option>
+                                <option value="Desember">Desember</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="exportPdf()"
+                                class="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm transition whitespace-nowrap">
+                                <i class="fa-solid fa-file-pdf mr-1"></i>PDF
+                            </button>
+                            <button type="button" onclick="exportExcel()"
+                                class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition whitespace-nowrap">
+                                <i class="fa-solid fa-file-excel mr-1"></i>Excel
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -327,6 +345,8 @@
         const daftarBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        let historyData = [];
+        let historyRequestId = 0;
 
         document.addEventListener("DOMContentLoaded", () => {
             document.getElementById('inputTanggalDay').value = '02';
@@ -453,6 +473,7 @@
                     success.querySelector('span').textContent = `Material masuk tersimpan di database. Stok terbaru: ${result.stock}.`;
                     success.classList.remove('hidden');
                     document.getElementById('filterBulan').value = payload.bulan;
+                    document.getElementById('cariMaterial').value = '';
                     renderTable();
 
                     document.getElementById('inputKodeBarang').value = '';
@@ -478,35 +499,121 @@
         }
 
         async function renderTable() {
+            const requestId = ++historyRequestId;
             const filter = document.getElementById('filterBulan').value;
+            const search = document.getElementById('cariMaterial').value.trim();
             const tbody = document.getElementById('tableBody');
+            const params = new URLSearchParams({ bulan: filter, cari: search });
 
             try {
-                const response = await fetch(`/material-masuk?bulan=${encodeURIComponent(filter)}`);
+                const response = await fetch(`/material-masuk?${params.toString()}`);
+                if (!response.ok) {
+                    throw new Error(`Server mengembalikan status ${response.status}`);
+                }
                 const data = await response.json();
+                if (requestId !== historyRequestId) return;
+                historyData = Array.isArray(data) ? data : [];
 
-                if (!Array.isArray(data) || data.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-slate-400 font-medium">Belum ada simpanan data material untuk bulan <strong>${filter}</strong>.</td></tr>`;
+                if (historyData.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-slate-400 font-medium">Tidak ada riwayat material yang cocok dengan pencarian dan filter.</td></tr>`;
                     return;
                 }
 
-                tbody.innerHTML = data.map((item, index) => `
+                tbody.innerHTML = historyData.map((item, index) => `
                     <tr class="hover:bg-slate-50 transition border-b border-slate-100">
                         <td class="py-3 px-4 font-bold text-slate-400 text-center">${index + 1}</td>
-                        <td class="py-3 px-4 font-mono font-bold text-blue-600">${item.kode_barang}</td>
-                        <td class="py-3 px-4 font-bold text-slate-800">${item.nama_material}</td>
-                        <td class="py-3 px-4 text-center font-mono font-black text-emerald-600">+${item.jumlah}</td>
-                        <td class="py-3 px-4 text-center font-semibold text-slate-500">${item.satuan}</td>
-                        <td class="py-3 px-4 text-slate-600 font-medium">${item.tanggal_transaksi}</td>
-                        <td class="py-3 px-4 text-center font-mono font-bold text-slate-600 bg-slate-50 rounded-lg">${item.jam_input}</td>
+                        <td class="py-3 px-4 font-mono font-bold text-blue-600">${escapeHtml(item.kode_barang)}</td>
+                        <td class="py-3 px-4 font-bold text-slate-800">${escapeHtml(item.nama_material)}</td>
+                        <td class="py-3 px-4 text-center font-mono font-black text-emerald-600">+${escapeHtml(item.jumlah)}</td>
+                        <td class="py-3 px-4 text-center font-semibold text-slate-500">${escapeHtml(item.satuan)}</td>
+                        <td class="py-3 px-4 text-slate-600 font-medium">${escapeHtml(item.tanggal_transaksi)}</td>
+                        <td class="py-3 px-4 text-center font-mono font-bold text-slate-600 bg-slate-50 rounded-lg">${escapeHtml(item.jam_input)}</td>
                         <td class="py-3 px-4 text-center">
-                            <span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-full border border-blue-200">${item.bulan_simpanan}</span>
+                            <span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-full border border-blue-200">${escapeHtml(item.bulan_simpanan)}</span>
                         </td>
                     </tr>
                 `).join('');
             } catch (error) {
+                if (requestId !== historyRequestId) return;
                 console.error('Gagal mengambil data database:', error);
+                historyData = [];
+                tbody.innerHTML = '<tr><td colspan="8" class="py-6 text-center text-rose-600 font-medium">Riwayat gagal dimuat. Silakan coba lagi.</td></tr>';
             }
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[character]);
+        }
+
+        function exportExcel() {
+            const params = new URLSearchParams({
+                bulan: document.getElementById('filterBulan').value,
+                cari: document.getElementById('cariMaterial').value.trim()
+            });
+            window.location.href = `/material-masuk/export/excel?${params.toString()}`;
+        }
+
+        function exportPdf() {
+            if (historyData.length === 0) {
+                alert('Tidak ada riwayat material untuk diekspor.');
+                return;
+            }
+
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                alert('Jendela PDF diblokir browser. Izinkan pop-up untuk situs ini lalu coba lagi.');
+                return;
+            }
+
+            const rows = historyData.map((item, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(item.kode_barang)}</td>
+                    <td>${escapeHtml(item.nama_material)}</td>
+                    <td>${escapeHtml(item.jumlah)}</td>
+                    <td>${escapeHtml(item.satuan)}</td>
+                    <td>${escapeHtml(item.tanggal_transaksi)}</td>
+                    <td>${escapeHtml(item.jam_input)}</td>
+                    <td>${escapeHtml(item.bulan_simpanan)}</td>
+                </tr>
+            `).join('');
+            const filter = escapeHtml(document.getElementById('filterBulan').value);
+            const search = escapeHtml(document.getElementById('cariMaterial').value.trim());
+
+            printWindow.document.write(`<!DOCTYPE html>
+                <html lang="id">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Riwayat Material Masuk</title>
+                    <style>
+                        body { font: 12px Arial, sans-serif; color: #1e293b; padding: 24px; }
+                        h1 { font-size: 20px; margin-bottom: 6px; }
+                        p { color: #475569; margin: 4px 0; }
+                        table { border-collapse: collapse; width: 100%; margin-top: 18px; }
+                        th, td { border: 1px solid #cbd5e1; padding: 7px; text-align: left; }
+                        th { background: #f1f5f9; }
+                        @media print { body { padding: 0; } }
+                    </style>
+                </head>
+                <body>
+                    <h1>Riwayat Material Masuk</h1>
+                    <p>Filter bulan: ${filter}</p>
+                    <p>Pencarian: ${search || '-'}</p>
+                    <table>
+                        <thead><tr><th>No</th><th>Nomor Material</th><th>Nama Material</th><th>Jumlah</th><th>Satuan</th><th>Tanggal</th><th>Jam</th><th>Bulan</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </body>
+                </html>`);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => printWindow.print(), 250);
         }
 
     </script>

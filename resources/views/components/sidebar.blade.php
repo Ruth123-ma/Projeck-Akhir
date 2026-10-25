@@ -32,13 +32,13 @@
             <a href="{{ url('/daftar-stok') }}"
                class="flex items-center space-x-2 px-3 py-3 rounded-lg transition md:space-x-3 md:px-4 {{ request()->is('daftar-stok*') ? 'bg-[#1E88E5] text-white shadow-md' : 'text-slate-300 hover:bg-slate-800/60' }}">
                 <i class="fa-solid fa-list w-4 md:w-5"></i>
-                <span>Stok</span>
+                <span>Daftar Stock</span>
             </a>
 
             <a href="{{ url('/laporan-material') }}"
                class="flex items-center space-x-2 px-3 py-3 rounded-lg transition md:space-x-3 md:px-4 {{ request()->is('laporan-material*') ? 'bg-[#1E88E5] text-white shadow-md' : 'text-slate-300 hover:bg-slate-800/60' }}">
                 <i class="fa-solid fa-chart-line w-4 md:w-5"></i>
-                <span>Laporan</span>
+                <span>Laporan Rekap</span>
             </a>
 
             <a href="{{ route('laporan-stok') }}"
@@ -54,5 +54,12 @@
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
             <span>Live Monitoring</span>
         </div>
+        <form method="POST" action="{{ route('logout') }}" class="mt-2">
+            @csrf
+            <button type="submit" class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-300 transition hover:bg-rose-500/15 hover:text-rose-300">
+                <i class="fa-solid fa-right-from-bracket w-4 md:w-5"></i>
+                <span>Keluar</span>
+            </button>
+        </form>
     </div>
 </aside>

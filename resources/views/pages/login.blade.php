@@ -28,12 +28,15 @@
 
                     <div>
                         <label for="username" class="mb-1 block text-sm font-semibold text-slate-700">User</label>
-                        <input id="username" name="username" type="text" value="{{ old('username') }}" required autofocus class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100" placeholder="admin">
+                        <select id="username" name="username" required autofocus class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100">
+                            <option value="Admin" @selected(old('username', 'Admin') === 'Admin')>Admin</option>
+                            <option value="Staff" @selected(old('username') === 'Staff')>Staff</option>
+                        </select>
                     </div>
 
                     <div>
                         <label for="password" class="mb-1 block text-sm font-semibold text-slate-700">Password</label>
-                        <input id="password" name="password" type="password" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100" placeholder="123">
+                        <input id="password" name="password" type="password" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100" placeholder="Password">
                     </div>
 
                     <div class="flex items-center justify-between gap-3 text-sm">
